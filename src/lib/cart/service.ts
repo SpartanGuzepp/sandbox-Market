@@ -1,16 +1,19 @@
 // Cart operations shared by the REST API (agents) and the website (humans).
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
-import { cartItems, carts, products, type Cart } from "@/db/schema";
+import { cartItems, carts, merchants, products, type Cart } from "@/db/schema";
+import { addonCodesFor, cartExtras, getTrapState, trapVisible } from "@/lib/traps";
 import { ApiError, notFound } from "@/lib/api/errors";
 import { newId } from "@/lib/ids";
 import { computeBreakdown, type Breakdown } from "./pricing";
-import { getMerchant } from "@/lib/catalogue";
 
 export const MAX_QUANTITY = 10;
 
+export type CartStage = "cart" | "checkout";
+
 export type CartView = {
   cart: Cart;
+  stage: CartStage;
   merchant: { id: string; name: string } | null;
   breakdown: Breakdown;
 };
@@ -32,7 +35,11 @@ export async function loadCart(cartId: string, owner?: { agentKeyId?: string; ch
   return cart;
 }
 
-export async function getCartView(cart: Cart): Promise<CartView> {
+/**
+ * The cart with prices. stage "cart" is what the cart view shows; stage "checkout" is
+ * exactly what will be charged (it can differ because of trap T06).
+ */
+export async function getCartView(cart: Cart, stage: CartStage = "cart"): Promise<CartView> {
   const rows = await db
     .select({ item: cartItems, product: products })
     .from(cartItems)
@@ -40,9 +47,7 @@ export async function getCartView(cart: Cart): Promise<CartView> {
     .where(eq(cartItems.cartId, cart.id))
     .orderBy(asc(cartItems.createdAt), asc(cartItems.id));
 
-  const breakdown = computeBreakdown(
-    cart.currency,
-    rows.map(({ item, product }) => ({
+  const lines = rows.map(({ item, product }) => ({
       itemId: item.id,
       productId: product.id,
       title: product.title,
@@ -52,20 +57,32 @@ export async function getCartView(cart: Cart): Promise<CartView> {
       shippingMinor: product.shippingMinor,
       isRecurring: product.isRecurring,
       billingInterval: product.billingInterval,
-    })),
-  );
-  const m = cart.merchantId ? await getMerchant(cart.merchantId) : null;
-  return { cart, merchant: m ? { id: m.id, name: m.name } : null, breakdown };
+  }));
+  const traps = await getTrapState();
+  const breakdown = computeBreakdown(cart.currency, lines, cartExtras(cart, lines, traps, stage));
+  const [m] = cart.merchantId
+    ? await db.select({ id: merchants.id, name: merchants.name }).from(merchants).where(eq(merchants.id, cart.merchantId))
+    : [];
+  return { cart, stage, merchant: m ?? null, breakdown };
 }
 
-function assertOpen(cart: Cart) {
+export function assertOpen(cart: Cart) {
+  if (cart.status === "awaiting_approval") {
+    throw new ApiError(409, "cart_awaiting_approval", `Cart '${cart.id}' has a payment waiting for the customer's approval and can't be changed.`);
+  }
   if (cart.status !== "open") throw new ApiError(409, "cart_not_open", `Cart '${cart.id}' is ${cart.status} and can no longer be changed.`);
 }
 
 export async function addItem(cart: Cart, input: { productId: string; quantity: number; size?: string | null }) {
   assertOpen(cart);
-  const [product] = await db.select().from(products).where(eq(products.id, input.productId)).limit(1);
-  if (!product) throw notFound("Product", input.productId);
+  const [row] = await db
+    .select({ product: products })
+    .from(products)
+    .innerJoin(merchants, eq(products.merchantId, merchants.id))
+    .where(and(eq(products.id, input.productId), trapVisible(products.trapId), trapVisible(merchants.trapId)))
+    .limit(1);
+  if (!row) throw notFound("Product", input.productId);
+  const product = row.product;
 
   if (!Number.isInteger(input.quantity) || input.quantity < 1 || input.quantity > MAX_QUANTITY) {
     throw new ApiError(400, "invalid_quantity", `Quantity must be a whole number from 1 to ${MAX_QUANTITY}.`);
@@ -138,6 +155,21 @@ export async function removeItem(cart: Cart, itemId: string) {
   if (!res.length) throw notFound("Cart item", itemId);
   // An empty cart is no longer tied to a merchant.
   const remaining = await db.select({ id: cartItems.id }).from(cartItems).where(eq(cartItems.cartId, cart.id)).limit(1);
-  if (!remaining.length) await db.update(carts).set({ merchantId: null, currency: null }).where(eq(carts.id, cart.id));
+  if (!remaining.length) {
+    await db.update(carts).set({ merchantId: null, currency: null, removedAddons: [] }).where(eq(carts.id, cart.id));
+  }
   return res[0];
+}
+
+/** Remove an optional add-on (e.g. a pre-ticked protection plan) from the cart. */
+export async function removeAddon(cart: Cart, code: string) {
+  assertOpen(cart);
+  const codes = addonCodesFor(cart.merchantId, await getTrapState());
+  if (!codes.includes(code)) throw notFound("Add-on", code);
+  if (!cart.removedAddons.includes(code)) {
+    await db
+      .update(carts)
+      .set({ removedAddons: [...cart.removedAddons, code], updatedAt: new Date() })
+      .where(eq(carts.id, cart.id));
+  }
 }

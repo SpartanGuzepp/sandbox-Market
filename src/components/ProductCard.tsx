@@ -13,7 +13,7 @@ export function ProductCard({ p }: { p: ProductWithMerchant }) {
         <h3 className="line-clamp-2 text-sm font-medium text-slate-900 group-hover:text-blue-700">{p.title}</h3>
         <Stars rating={p.rating} count={p.reviewCount} />
         <p className="mt-auto pt-1 font-semibold text-slate-900">
-          {formatMoney(p.priceMinor, p.currency)}
+          {p.decoration.currencyHidden ? (p.priceMinor / 100).toFixed(2) : formatMoney(p.priceMinor, p.currency)}
           {p.isRecurring && <span className="text-sm font-normal text-slate-500"> / {p.billingInterval}</span>}
         </p>
       </div>

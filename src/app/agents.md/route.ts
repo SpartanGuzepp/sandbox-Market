@@ -27,8 +27,16 @@ Sandbox Market is a test marketplace for AI shopping agents. Every merchant, bra
    - A cart holds items from ONE merchant only. Adding another merchant's product returns 409 merchant_mismatch.
 5. Review the cart: GET /carts/{cart_id}. It shows items, shipping, fees, add-ons, recurring charges and the total.
 6. Change or remove lines: PATCH or DELETE /carts/{cart_id}/items/{item_id}.
-
-Checkout and payment are documented in the OpenAPI spec once available.
+   Optional add-ons can be removed: POST /carts/{cart_id}/addons/{code}/remove.
+7. Get the signed checkout summary: GET /carts/{cart_id}/summary
+   It shows exactly what will be charged, plus a cart_hash and an HMAC signature.
+8. Pay: POST /carts/{cart_id}/checkout  {"card_token": "vc_...", "expected_cart_hash": "sha256:..."}
+   - Only virtual card tokens (vc_ + 16-64 letters/digits). Real card numbers are rejected.
+   - expected_cart_hash is optional; if the cart changed since the summary, checkout fails with 409 cart_changed.
+   - 201 = order placed, 402 = payment declined (cart is open again),
+     202 = the customer must approve the payment in their banking app. Poll GET /orders/{order_id}.
+   - Agents cannot approve payments themselves.
+9. Orders: GET /orders and GET /orders/{order_id}.
 
 ## Example
 curl -H "X-Agent-Key: $KEY" "${o}/api/v1/products?q=black%20running%20shoes&size=42"

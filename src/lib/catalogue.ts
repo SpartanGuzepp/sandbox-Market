@@ -3,11 +3,13 @@
 import { and, asc, desc, eq, ilike, inArray, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db/client";
 import { merchants, products, reviews, type Merchant, type Product, type Review } from "@/db/schema";
+import { decorateProduct, getTrapState, trapVisible, type ProductDecoration } from "@/lib/traps";
 
 export type ProductWithMerchant = Product & {
   merchant: Pick<Merchant, "id" | "name" | "country" | "brandColour">;
   rating: number | null;
   reviewCount: number;
+  decoration: ProductDecoration;
 };
 
 export type SearchParams = {
@@ -27,8 +29,13 @@ function stem(word: string) {
   return word.length > 3 && word.endsWith("s") ? word.slice(0, -1) : word;
 }
 
-const ratingSql = sql<number | null>`(select round(avg(${reviews.rating})::numeric, 1)::float from ${reviews} where ${reviews.productId} = ${products.id})`;
-const reviewCountSql = sql<number>`(select count(*)::int from ${reviews} where ${reviews.productId} = ${products.id})`;
+// Reviews tied to a switched-off trap are excluded everywhere.
+const reviewVisible = sql`(r.trap_id is null or exists (select 1 from attack_scenarios a where a.id = r.trap_id and a.enabled))`;
+const ratingSql = sql<number | null>`(select round(avg(r.rating)::numeric, 1)::float from reviews r where r.product_id = ${products.id} and ${reviewVisible})`;
+const reviewCountSql = sql<number>`(select count(*)::int from reviews r where r.product_id = ${products.id} and ${reviewVisible})`;
+
+// Products (and merchants) tied to a switched-off trap don't exist for shoppers.
+const productVisible = () => and(trapVisible(products.trapId), trapVisible(merchants.trapId))!;
 
 const productSelect = {
   product: products,
@@ -38,10 +45,20 @@ const productSelect = {
 };
 
 type Row = { product: Product; merchant: ProductWithMerchant["merchant"]; rating: number | null; reviewCount: number };
-const flatten = (r: Row): ProductWithMerchant => ({ ...r.product, merchant: r.merchant, rating: r.rating, reviewCount: r.reviewCount });
+
+async function flattenAll(rows: Row[]): Promise<ProductWithMerchant[]> {
+  const traps = await getTrapState();
+  return rows.map((r) => ({
+    ...r.product,
+    merchant: r.merchant,
+    rating: r.rating,
+    reviewCount: r.reviewCount,
+    decoration: decorateProduct(r.product, traps),
+  }));
+}
 
 export async function searchProducts(p: SearchParams): Promise<{ total: number; items: ProductWithMerchant[] }> {
-  const conds: SQL[] = [];
+  const conds: SQL[] = [productVisible()];
   const words = (p.q ?? "")
     .toLowerCase()
     .split(/[^a-z0-9äöüéèàß%-]+/i)
@@ -64,7 +81,7 @@ export async function searchProducts(p: SearchParams): Promise<{ total: number; 
   if (p.colour) conds.push(sql`lower(${products.attributes}->>'colour') = ${p.colour.toLowerCase()}`);
   if (p.size) conds.push(sql`${products.attributes}->'sizes' ? ${p.size}`);
   if (p.merchantId) conds.push(eq(products.merchantId, p.merchantId));
-  const where = conds.length ? and(...conds) : undefined;
+  const where = and(...conds);
 
   const order =
     p.sort === "price_asc"
@@ -93,7 +110,7 @@ export async function searchProducts(p: SearchParams): Promise<{ total: number; 
     .limit(Math.min(p.limit ?? 20, 100))
     .offset(p.offset ?? 0);
 
-  return { total: count, items: rows.map(flatten) };
+  return { total: count, items: await flattenAll(rows) };
 }
 
 export async function getProduct(id: string): Promise<(ProductWithMerchant & { reviews: Review[] }) | null> {
@@ -101,11 +118,16 @@ export async function getProduct(id: string): Promise<(ProductWithMerchant & { r
     .select(productSelect)
     .from(products)
     .innerJoin(merchants, eq(products.merchantId, merchants.id))
-    .where(eq(products.id, id))
+    .where(and(eq(products.id, id), productVisible()))
     .limit(1);
   if (!row) return null;
-  const revs = await db.select().from(reviews).where(eq(reviews.productId, id)).orderBy(desc(reviews.createdAt));
-  return { ...flatten(row), reviews: revs };
+  const revs = await db
+    .select()
+    .from(reviews)
+    .where(and(eq(reviews.productId, id), trapVisible(reviews.trapId)))
+    .orderBy(desc(reviews.createdAt));
+  const [product] = await flattenAll([row]);
+  return { ...product, reviews: revs };
 }
 
 export async function getProductsByIds(ids: string[]): Promise<ProductWithMerchant[]> {
@@ -115,21 +137,23 @@ export async function getProductsByIds(ids: string[]): Promise<ProductWithMercha
     .from(products)
     .innerJoin(merchants, eq(products.merchantId, merchants.id))
     .where(inArray(products.id, ids));
-  return rows.map(flatten);
+  return flattenAll(rows);
 }
 
+/** A merchant as shoppers see it (null if hidden because its trap is off). */
 export async function getMerchant(id: string): Promise<(Merchant & { productCount: number }) | null> {
-  const [m] = await db.select().from(merchants).where(eq(merchants.id, id)).limit(1);
+  const [m] = await db.select().from(merchants).where(and(eq(merchants.id, id), trapVisible(merchants.trapId))).limit(1);
   if (!m) return null;
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(products)
-    .where(eq(products.merchantId, id));
+    .innerJoin(merchants, eq(products.merchantId, merchants.id))
+    .where(and(eq(products.merchantId, id), productVisible()));
   return { ...m, productCount: count };
 }
 
 export async function listMerchants(): Promise<Merchant[]> {
-  return db.select().from(merchants).orderBy(asc(merchants.name));
+  return db.select().from(merchants).where(trapVisible(merchants.trapId)).orderBy(asc(merchants.name));
 }
 
 export async function listColours(): Promise<string[]> {

@@ -36,3 +36,14 @@ export const AddItemBody = z
   .strict();
 
 export const UpdateItemBody = z.object({ quantity: z.number().int().min(1).max(10) }).strict();
+
+export const CheckoutBody = z
+  .object({
+    card_token: z.string().max(300).describe("Virtual card token, e.g. vc_demo4f8a2c9e1b7d3a6f. Real card numbers are rejected."),
+    expected_cart_hash: z
+      .string()
+      .max(200)
+      .optional()
+      .describe("Optional. cart_hash from GET /carts/{id}/summary. Checkout fails with 409 cart_changed if the cart changed since."),
+  })
+  .strict();

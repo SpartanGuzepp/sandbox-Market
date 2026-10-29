@@ -3,7 +3,8 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { ApiError } from "@/lib/api/errors";
-import { addItem, createCart, loadCart, removeItem, updateItemQuantity } from "@/lib/cart/service";
+import { addItem, createCart, loadCart, removeAddon, removeItem, updateItemQuantity } from "@/lib/cart/service";
+import { checkoutCart } from "@/lib/payments/checkout";
 import { logEvent } from "@/lib/events";
 import { CART_COOKIE } from "./cart-cookie";
 
@@ -72,4 +73,39 @@ export async function removeItemAction(formData: FormData) {
     error = errorMessage(e);
   }
   redirect(error ? `/cart?error=${encodeURIComponent(error)}` : "/cart");
+}
+
+export async function removeAddonAction(formData: FormData) {
+  const code = String(formData.get("code"));
+  let error: string | null = null;
+  try {
+    const cart = await getOrCreateWebCart();
+    await removeAddon(cart, code);
+    await logEvent({ actor: WEB_ACTOR, type: "cart.addon_removed", cartId: cart.id, summary: `Removed optional add-on '${code}'`, data: { code } });
+  } catch (e) {
+    error = errorMessage(e);
+  }
+  redirect(error ? `/cart?error=${encodeURIComponent(error)}` : "/cart");
+}
+
+export async function checkoutAction(formData: FormData) {
+  let orderId: string | null = null;
+  let error: string | null = null;
+  try {
+    const id = (await cookies()).get(CART_COOKIE)?.value;
+    if (!id) throw new ApiError(409, "cart_empty", "Your cart is empty.");
+    const cart = await loadCart(id, { channel: "web" });
+    const { order } = await checkoutCart(cart, {
+      cardToken: formData.get("card_token"),
+      expectedCartHash: String(formData.get("cart_hash") ?? "") || undefined,
+      actor: WEB_ACTOR,
+      channel: "web",
+      agentKeyId: null,
+    });
+    orderId = order.id;
+  } catch (e) {
+    error = errorMessage(e);
+  }
+  if (error) redirect(`/checkout?error=${encodeURIComponent(error)}`);
+  redirect(`/orders/${orderId}`);
 }

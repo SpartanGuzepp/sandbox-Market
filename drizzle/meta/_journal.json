@@ -8,6 +8,13 @@
       "when": 1793227429577,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793308964582,
+      "tag": "0001_payments_traps",
+      "breakpoints": true
     }
   ]
 }

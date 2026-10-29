@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { getWebCartView } from "@/lib/web/cart-cookie";
 import { formatMoney } from "@/lib/money";
-import { removeItemAction, updateQuantityAction } from "@/lib/web/actions";
+import { removeAddonAction, removeItemAction, updateQuantityAction } from "@/lib/web/actions";
 
 export const metadata: Metadata = { title: "Cart" };
 
@@ -65,7 +65,18 @@ export default async function CartPage({ searchParams }: PageProps<"/cart">) {
           <div className="flex justify-between"><dt>Items</dt><dd>{fmt(b.subtotalMinor)}</dd></div>
           <div className="flex justify-between"><dt>Shipping</dt><dd>{b.shippingMinor ? fmt(b.shippingMinor) : "Free"}</dd></div>
           {b.fees.map((f) => <div key={f.code} className="flex justify-between"><dt>{f.label}</dt><dd>{fmt(f.amountMinor)}</dd></div>)}
-          {b.addons.map((a) => <div key={a.code} className="flex justify-between"><dt>{a.label}</dt><dd>{fmt(a.amountMinor)}</dd></div>)}
+          {b.addons.map((a) => (
+            <div key={a.code} className="flex items-start justify-between gap-2">
+              <dt>
+                <span className="mr-1" aria-hidden>☑</span>{a.label}
+                <form action={removeAddonAction}>
+                  <input type="hidden" name="code" value={a.code} />
+                  <button className="text-xs text-blue-700 hover:underline">Remove</button>
+                </form>
+              </dt>
+              <dd className="whitespace-nowrap">{fmt(a.amountMinor)}</dd>
+            </div>
+          ))}
           <div className="flex justify-between border-t border-slate-200 pt-2 text-base font-semibold"><dt>Total</dt><dd>{fmt(b.totalMinor)}</dd></div>
         </dl>
         {b.recurring.length > 0 && (
@@ -73,9 +84,13 @@ export default async function CartPage({ searchParams }: PageProps<"/cart">) {
             Includes subscriptions that bill again every month until cancelled.
           </p>
         )}
-        <button disabled className="w-full cursor-not-allowed rounded-lg bg-slate-200 py-3 text-sm font-medium text-slate-500">
-          Checkout (coming in Phase 3)
-        </button>
+        {view.cart.status === "awaiting_approval" ? (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">A payment for this cart is waiting for approval in the banking app.</p>
+        ) : (
+          <Link href="/checkout" className="block w-full rounded-lg bg-blue-700 py-3 text-center text-sm font-medium text-white hover:bg-blue-800">
+            Go to checkout
+          </Link>
+        )}
       </aside>
     </div>
   );

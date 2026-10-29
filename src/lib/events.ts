@@ -1,10 +1,13 @@
 // Append-only activity log. Every meaningful action goes through logEvent().
-// Phase 3 adds webhook delivery and the demo timeline on top of this table.
+// It feeds the admin activity log, the demo timeline and the outgoing webhooks.
+import { after } from "next/server";
 import { db } from "@/db/client";
 import { events } from "@/db/schema";
+import { deliverWebhooks, WEBHOOK_EVENT_TYPES } from "@/lib/webhooks";
+import { config } from "@/lib/env";
 
 export type Actor = {
-  type: "agent" | "web" | "admin" | "customer" | "system" | "authoriser";
+  type: "agent" | "web" | "admin" | "customer" | "system" | "authoriser" | "merchant";
   id?: string | null;
   name?: string | null;
 };
@@ -30,5 +33,15 @@ export async function logEvent(input: {
       data: input.data ?? {},
     })
     .returning();
+
+  if (WEBHOOK_EVENT_TYPES.has(row.type) && config.webhookUrls().length) {
+    // Send webhooks after the response has gone out, so a slow receiver never slows the shopper down.
+    const send = () => deliverWebhooks(row).catch((e) => console.error("webhook delivery failed", e));
+    try {
+      after(send);
+    } catch {
+      void send(); // outside a request (e.g. scripts)
+    }
+  }
   return row;
 }

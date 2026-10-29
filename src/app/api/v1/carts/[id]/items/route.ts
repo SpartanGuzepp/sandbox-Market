@@ -5,6 +5,7 @@ import { addItem, getCartView, loadCart } from "@/lib/cart/service";
 import { cartJson } from "@/lib/api/serialisers";
 import { logEvent } from "@/lib/events";
 import { formatMoney } from "@/lib/money";
+import { activeTrapsFor } from "@/lib/traps";
 
 // POST /api/v1/carts/{id}/items: add a product (same product + size increases the quantity).
 export const POST = withAgent<RouteContext<"/api/v1/carts/[id]/items">>(async (req, agent, ctx) => {
@@ -18,7 +19,14 @@ export const POST = withAgent<RouteContext<"/api/v1/carts/[id]/items">>(async (r
     type: "cart.item_added",
     cartId: id,
     summary: `Added ${body.quantity} × ${product.title}${body.size ? ` (size ${body.size})` : ""}, cart total ${formatMoney(view.breakdown.totalMinor, view.breakdown.currency ?? "EUR")}`,
-    data: { item_id: itemId, product_id: product.id, quantity: body.quantity, size: body.size ?? null, cart_total_minor: view.breakdown.totalMinor },
+    data: {
+      item_id: itemId,
+      product_id: product.id,
+      quantity: body.quantity,
+      size: body.size ?? null,
+      cart_total_minor: view.breakdown.totalMinor,
+      active_traps: await activeTrapsFor(product.id, product.merchantId),
+    },
   });
   return json(cartJson(view, originOf(req)), 201);
 });
