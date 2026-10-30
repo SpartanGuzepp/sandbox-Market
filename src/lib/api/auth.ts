@@ -10,7 +10,9 @@ export type AgentIdentity = { id: string; name: string };
 export const hashKey = (key: string) => createHash("sha256").update(key).digest("hex");
 
 export async function authenticateAgent(req: Request): Promise<AgentIdentity> {
-  const key = req.headers.get("x-agent-key")?.trim();
+  // X-Agent-Key header, or "Authorization: Bearer <key>" (handy for MCP clients).
+  const bearer = req.headers.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const key = (req.headers.get("x-agent-key") ?? bearer)?.trim();
   if (!key) {
     throw new ApiError(401, "missing_agent_key", "Send your API key in the X-Agent-Key header. See /agents.md.");
   }

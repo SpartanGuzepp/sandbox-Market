@@ -1,11 +1,6 @@
-import { withAgent, originOf } from "@/lib/api/handler";
+import { withAgent, opCtx } from "@/lib/api/handler";
 import { json } from "@/lib/api/errors";
-import { listMerchants } from "@/lib/catalogue";
-import { merchantJson } from "@/lib/api/serialisers";
+import { opListMerchants } from "@/lib/agent-ops";
 
 // GET /api/v1/merchants
-export const GET = withAgent(async (req) => {
-  const origin = originOf(req);
-  const items = await listMerchants();
-  return json({ items: items.map((m) => merchantJson(m, origin)) });
-});
+export const GET = withAgent(async (req, agent) => json(await opListMerchants(opCtx(req, agent))));

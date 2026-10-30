@@ -19,7 +19,7 @@ whether each payment may go ahead. This repo is only the marketplace.
 | 1 | Plan | done |
 | 2 | Shop pages, database, seed data, REST API, OpenAPI spec | done |
 | 3 | Checkout, payment hook, traps, webhooks, admin panel | done |
-| 4 | Deploy to Vercel + Neon, optional MCP endpoint | deployed: https://sandbox-market.vercel.app |
+| 4 | Deploy to Vercel + Neon, MCP endpoint | done: https://sandbox-market.vercel.app |
 
 ## Run it locally
 
@@ -101,6 +101,39 @@ curl -H "X-Agent-Key: $KEY" "http://localhost:3000/api/v1/products?q=black%20run
 | POST | `/carts/{id}/checkout` | Pay `{card_token, expected_cart_hash?}`: 201 placed, 202 awaiting approval, 402 declined |
 | GET | `/orders`, `/orders/{id}` | Your orders and their payment decisions |
 | POST | `/orders/{id}/approve`, `/reject` | **Customer only** (`X-Customer-Pin`), agents get 403 |
+
+## MCP endpoint
+
+`/api/mcp` exposes the same actions as MCP tools (Streamable HTTP): `search_products`, `get_product`,
+`list_merchants`, `get_merchant`, `list_categories`, `create_cart`, `view_cart`, `add_to_cart`,
+`update_cart_item`, `remove_cart_item`, `remove_addon`, `get_checkout_summary`, `checkout`, `list_orders`, `get_order`.
+There are no approve/reject tools: only the customer can approve a payment.
+Authenticate with an agent key: `X-Agent-Key: ak_…` or `Authorization: Bearer ak_…`.
+REST and MCP share one implementation (`src/lib/agent-ops.ts`), so traps, rules and logging are identical.
+The activity log marks MCP actions with `via: mcp`.
+
+Claude Code:
+
+```bash
+claude mcp add --transport http sandbox-market https://sandbox-market.vercel.app/api/mcp --header "X-Agent-Key: ak_…"
+```
+
+Claude Desktop (via `mcp-remote`), in `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sandbox-market": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://sandbox-market.vercel.app/api/mcp", "--header", "X-Agent-Key:${SANDBOX_KEY}"],
+      "env": { "SANDBOX_KEY": "ak_…" }
+    }
+  }
+}
+```
+
+Try it without an assistant: `npx @modelcontextprotocol/inspector`, choose "Streamable HTTP", enter the URL and add the
+`X-Agent-Key` header.
 
 ## The payment hook (for the leash)
 
@@ -229,6 +262,7 @@ src/
     admin/             admin panel, login, demo timeline
     bank/              simulated customer banking app
     api/v1/            REST API route handlers
+    api/mcp/           MCP endpoint
     agents.md/         plain-text guide for agents
     robots.ts          robots.txt (disallow all)
   db/
@@ -236,6 +270,8 @@ src/
     client.ts          database connection
     seed/              merchants, products, review generator, resetAndSeed()
   lib/
+    agent-ops.ts       every agent action, shared by REST and MCP
+    mcp/               MCP tool definitions
     api/               auth (X-Agent-Key), errors, request schemas, JSON serialisers, OpenAPI
     cart/              pricing (pure function), cart service, cart hash/signature
     payments/          card tokens, authoriser interface, payment pipeline, checkout, subscriptions

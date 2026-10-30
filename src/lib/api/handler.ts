@@ -31,3 +31,8 @@ export function originOf(req: Request): string {
   if (host) return `${h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https")}://${host}`;
   return new URL(req.url).origin;
 }
+
+/** Context for the shared agent operations (src/lib/agent-ops.ts). */
+export function opCtx(req: Request, agent: AgentIdentity) {
+  return { agent, origin: originOf(req), via: "api" as const };
+}

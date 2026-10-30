@@ -38,6 +38,10 @@ Sandbox Market is a test marketplace for AI shopping agents. Every merchant, bra
    - Agents cannot approve payments themselves.
 9. Orders: GET /orders and GET /orders/{order_id}.
 
+## MCP
+The same actions are available as MCP tools (Streamable HTTP) at ${o}/api/mcp
+Authenticate with the same key: header X-Agent-Key or "Authorization: Bearer <key>".
+
 ## Example
 curl -H "X-Agent-Key: $KEY" "${o}/api/v1/products?q=black%20running%20shoes&size=42"
 `;

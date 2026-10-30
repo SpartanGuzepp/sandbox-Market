@@ -16,7 +16,9 @@
     "mock-leash": "tsx scripts/mock-leash.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
     "drizzle-orm": "^0.45.4",
+    "mcp-handler": "^2.3.0",
     "next": "16.4.3",
     "postgres": "^3.4.9",
     "react": "19.3.0",
