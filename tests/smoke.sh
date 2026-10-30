@@ -50,8 +50,11 @@ SUM=$(get "/carts/$C2/summary")
 check "signed summary has hash"    '"cart_hash":"sha256:' "$SUM"
 check "signed summary has HMAC"    '"signature":"hmac-sha256:' "$SUM"
 HASH=$(field cart_hash <<<"$SUM")
-check "wrong expected hash -> 409" "cart_changed" "$(post "/carts/$C2/checkout" "{\"card_token\":\"$TOK\",\"expected_cart_hash\":\"sha256:nope\"}")"
-ORDER=$(post "/carts/$C2/checkout" "{\"card_token\":\"$TOK\",\"expected_cart_hash\":\"$HASH\"}")
+# JSON bodies are built with printf first: macOS ships bash 3.2, which mangles \" inside "$( )".
+BAD_BODY=$(printf '{"card_token":"%s","expected_cart_hash":"sha256:nope"}' "$TOK")
+GOOD_BODY=$(printf '{"card_token":"%s","expected_cart_hash":"%s"}' "$TOK" "$HASH")
+check "wrong expected hash -> 409" "cart_changed" "$(post "/carts/$C2/checkout" "$BAD_BODY")"
+ORDER=$(post "/carts/$C2/checkout" "$GOOD_BODY")
 check "no leash approves"          '"status":"placed"' "$ORDER"
 check "order shows the reason"     "No leash configured" "$ORDER"
 OID=$(field id <<<"$ORDER")
