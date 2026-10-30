@@ -19,7 +19,7 @@ whether each payment may go ahead. This repo is only the marketplace.
 | 1 | Plan | done |
 | 2 | Shop pages, database, seed data, REST API, OpenAPI spec | done |
 | 3 | Checkout, payment hook, traps, webhooks, admin panel | done |
-| 4 | Deploy to Vercel + Neon, optional MCP endpoint | later |
+| 4 | Deploy to Vercel + Neon, optional MCP endpoint | deployed: https://sandbox-market.vercel.app |
 
 ## Run it locally
 
@@ -45,6 +45,23 @@ npm run dev
 Open http://localhost:3000.
 
 To reset the database to the known starting state at any time: `npm run db:seed`.
+
+## Deploying (Vercel + Neon)
+
+1. Generate production secrets on your computer:
+   `for n in SESSION_SECRET CART_SIGNING_SECRET PAYMENT_AUTHORISER_SECRET WEBHOOK_SECRET; do echo "$n=$(openssl rand -hex 32)"; done`
+   plus `ADMIN_PASSWORD`, `CUSTOMER_PIN` and `DEMO_AGENT_KEY` (`ak_demo_` + random).
+2. Vercel → Add New → Project → import this repo. Paste the secrets as environment variables, add
+   `SEND_BASKET_DETAILS=false`, deploy. (The first build works without a database.)
+3. Project → Storage → Create Database → Neon (Frankfurt, Free) → connect to the project with no prefix,
+   so the variable is `DATABASE_URL`.
+4. Create tables and seed data from your computer, all on one line, with the unpooled Neon address:
+   `DATABASE_URL='postgresql://…' DEMO_AGENT_KEY='ak_demo_…' npm run db:setup`
+5. Deployments → ⋯ → Redeploy. Use the project's main domain: deployment-specific URLs are behind Vercel login.
+6. Check: `BASE=https://<your-domain> KEY='ak_demo_…' bash tests/smoke.sh`
+
+Later schema changes: run `npm run db:migrate` the same way (with the Neon address) before or after pushing.
+A leash used in production must be reachable on the public internet; `localhost` only works locally.
 
 ## Commands
 
