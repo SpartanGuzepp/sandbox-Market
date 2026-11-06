@@ -3,14 +3,14 @@
 import { redirect } from "next/navigation";
 import { ApiError } from "@/lib/api/errors";
 import { safeEqual } from "@/lib/api/customer";
-import { requireEnv } from "@/lib/env";
+import { config } from "@/lib/env";
 import { customerDecision } from "@/lib/payments/process";
 import { endSession, requireBank, startSession } from "@/lib/session";
 
 export async function bankLoginAction(formData: FormData) {
-  const pin = String(formData.get("pin") ?? "");
+  const pin = String(formData.get("pin") ?? "").trim();
   await new Promise((r) => setTimeout(r, 300));
-  if (!safeEqual(pin, requireEnv("CUSTOMER_PIN"))) redirect("/bank/login?error=1");
+  if (!safeEqual(pin, config.customerPin())) redirect("/bank/login?error=1");
   await startSession("bank");
   redirect("/bank");
 }

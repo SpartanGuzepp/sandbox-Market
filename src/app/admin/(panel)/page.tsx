@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
-import { config } from "@/lib/env";
+import { config, customerPinStatus } from "@/lib/env";
 import { resetDatabaseAction } from "@/lib/admin/actions";
 import { Flash, PageTitle, btn } from "@/components/admin";
 
@@ -23,6 +23,7 @@ export default async function AdminHome({ searchParams }: PageProps<"/admin">) {
   ]);
   const url = config.authoriserUrl();
   const hooks = config.webhookUrls();
+  const pin = customerPinStatus();
 
   const stats = [
     { label: "Orders", value: orders, href: "/admin/orders" },
@@ -54,6 +55,19 @@ export default async function AdminHome({ searchParams }: PageProps<"/admin">) {
           <dt className="text-slate-500">SEND_BASKET_DETAILS</dt>
           <dd>{config.sendBasketDetails() ? "true: line items are sent to the authoriser" : "false: only card-network fields are sent"}</dd>
           <dt className="text-slate-500">Webhook URLs</dt><dd>{hooks.length ? hooks.join(", ") : "none"}</dd>
+          <dt className="text-slate-500">Customer PIN (CUSTOMER_PIN)</dt>
+          <dd>
+            {pin.set ? (
+              <span>
+                set, {pin.length} characters
+                {pin.hadSurroundingWhitespace && (
+                  <span className="ml-2 text-amber-700">(the stored value has spaces or a line break around it; they are ignored)</span>
+                )}
+              </span>
+            ) : (
+              <span className="font-medium text-red-700">not set: the banking app and approve/reject endpoints will fail</span>
+            )}
+          </dd>
         </dl>
       </section>
 
